@@ -1,0 +1,996 @@
+{
+  "name": "Clinical Intelligence RAG Chatbot with Health Query Validation",
+  "nodes": [
+    {
+      "parameters": {
+        "text": "={{ $json.body.chatInput }}",
+        "options": {
+          "systemMessage": "You are a Clinical Intelligence Agent specializing in multi-domain health risk analysis (Heart, Lung, Liver, Metabolism, Sleep, and Mental Health).\n\n**PRIMARY DIRECTIVE (The Health Firewall):**\n- You are strictly prohibited from answering questions unrelated to human health, medicine, biology, or clinical data.\n- If a user asks about politics, entertainment, coding (unrelated to this health engine), or general trivia, you must politely refuse: \"I am a specialized Clinical Intelligence Agent. I only provide insights based on health data and medical guidelines.\"\n\n**RESOURCES & TOOLS:**\n1. **Local RAG (Vector Store):** This is your \"Source of Truth.\" Always check here first for clinical thresholds (FIB-4, METS-IR, AHA PREVENT, PLCOm2012).\n2. **SerpApi (Google Scholar/PubMed Search):** Use this ONLY if:\n   - The user asks about a medication/treatment released after 2025.\n   - You need to cross-reference a rare symptom not found in the local guidelines.\n   - You are looking for active clinical trials.\n   - SEARCH FILTER: Restrict searches to site:ncbi.nlm.nih.gov OR site:mayoclinic.org OR site:thelancet.com.\n\n**REASONING PROTOCOL:**\n- **Step 1:** Validate if the query is health-related.\n- **Step 2:** Retrieve the patient's specific JSON risk data provided in the context.\n- **Step 3:** Compare the patient's numbers (e.g., Glucose: 140) against the retrieved RAG guidelines.\n- **Step 4:** If a discrepancy or \"Clinical Flag\" exists, explain the biological \"why.\"\n- **Step 5:** Cite every insight. (e.g., \"According to the AASLD 2024 Guidelines...\")\n\n**ANTI-HALLUCINATION RULE:**\n- If you cannot find a specific threshold in the Vector Store or through a high-authority search, state: \"Current clinical guidelines do not provide a definitive threshold for this specific metric.\"\n- NEVER invent a diagnosis. Use the term \"Indicated Risk Profile\" instead.\n\n**OUTPUT STRUCTURE:**\n1. Executive Health Summary\n2. Domain-Specific Breakdown (with citations)\n3. Actionable Clinical Next Steps\n4. Standard Medical Disclaimer",
+          "passthroughBinaryImages": true,
+          "enableStreaming": true
+        }
+      },
+      "id": "9380e6db-555d-4327-8a37-fa767d7d4c64",
+      "name": "Clinical Intelligence Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        80,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "gpt-4o-mini"
+        },
+        "builtInTools": {},
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "id": "62683c99-691a-47eb-a6e2-9dd964cb5ffd",
+      "name": "GPT-4 Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -80,
+        832
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "zrFPKn18oYCkZRyq",
+          "name": "n8n free OpenAI API credits"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionKey": "={{ $json.body.sessionId }}",
+        "contextWindowLength": 10
+      },
+      "id": "4c5f3e23-6781-4c9f-9037-cd31a7826243",
+      "name": "Conversation Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        48,
+        832
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "Retrieves clinical thresholds and medical guidelines for FIB-4, METS-IR, AHA PREVENT, PLCOm2012, and other health metrics from the local knowledge base",
+        "memoryKey": {
+          "__rl": true,
+          "mode": "list",
+          "value": "vector_store_key"
+        },
+        "topK": 5
+      },
+      "id": "0f821ff8-9973-4cc3-9284-2b06a0fe00b9",
+      "name": "Clinical Guidelines RAG",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreInMemory",
+      "typeVersion": 1.3,
+      "position": [
+        176,
+        832
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "fe23efe2-3dc4-4657-8343-54bbd4f5fd90",
+      "name": "Medical Research Search",
+      "type": "@n8n/n8n-nodes-langchain.toolSerpApi",
+      "typeVersion": 1,
+      "position": [
+        464,
+        832
+      ],
+      "credentials": {
+        "serpApi": {
+          "id": "rA17AyCUtyBaSzK3",
+          "name": "SerpAPI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        256,
+        1040
+      ],
+      "id": "ff8b2b73-438a-4465-a692-acf928bd20f9",
+      "name": "Embeddings OpenAI",
+      "credentials": {
+        "openAiApi": {
+          "id": "zrFPKn18oYCkZRyq",
+          "name": "n8n free OpenAI API credits"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "health-chat",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "483d6643-703f-45b4-a50e-cd0e76979176",
+      "name": "Health Query Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -304,
+        608
+      ],
+      "webhookId": "41df6213-10d1-40fb-83e7-1e69feff9463"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"response\": $('Clinical Intelligence Agent').item.json.output, \"sessionId\": $('Health Query Webhook').item.json.body.sessionId } }}",
+        "options": {}
+      },
+      "id": "21e25683-2a03-48e5-8804-585ffb711504",
+      "name": "Send Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        672,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 🏥 Clinical Intelligence RAG Chatbot\n\n**Purpose:** AI-powered health assistant that answers medical queries using clinical guidelines and research, with strict health-only query validation.\n\n### 🔒 Health Firewall\n- **Refuses non-health queries** (politics, entertainment, coding, etc.)\n- Only responds to health, medicine, biology, and clinical data questions\n\n### 🧠 Intelligence Sources\n1. **Local RAG (Vector Store):** Primary source for clinical thresholds\n   - FIB-4, METS-IR, AHA PREVENT, PLCOm2012 guidelines\n   - Always checked first for medical standards\n\n2. **SerpAPI (Medical Research):** Secondary source for:\n   - Post-2025 medications/treatments\n   - Rare symptoms not in local guidelines\n   - Active clinical trials\n   - Restricted to: ncbi.nlm.nih.gov, mayoclinic.org, thelancet.com\n\n### 📊 Analysis Domains\n- Heart, Lung, Liver, Metabolism, Sleep, Mental Health\n\n### 🔄 Workflow Flow\n1. **Webhook receives** POST request with chatInput + sessionId\n2. **Agent validates** query is health-related\n3. **RAG retrieves** clinical guidelines from vector store\n4. **SerpAPI searches** medical research if needed\n5. **Memory maintains** conversation context (10-message window)\n6. **Response returns** structured health analysis with citations\n\n### 📋 Output Structure\n1. Executive Health Summary\n2. Domain-Specific Breakdown (with citations)\n3. Actionable Clinical Next Steps\n4. Standard Medical Disclaimer\n\n### ⚙️ Setup Required\n- Configure OpenAI credentials (GPT-4 model + embeddings)\n- Configure SerpAPI credentials\n- Load clinical guidelines into Vector Store (separate ingestion workflow)\n- Activate workflow to get production webhook URL\n\n### 🔗 API Endpoint\nPOST /webhook/health-chat\n```json\n{\n  \"chatInput\": \"How to decrease heart risk?\",\n  \"sessionId\": \"user-session-1\"\n}\n```",
+        "height": 680,
+        "width": 460,
+        "color": 4
+      },
+      "id": "e8f73e5e-181c-4c8b-948c-8d1410efb643",
+      "name": "Clinical Intelligence RAG Chatbot - Workflow Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        832,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chat",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "b7ec4859-b98a-49ac-be73-d5b5b63d2c15",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -2800,
+        1664
+      ],
+      "webhookId": "61c17cad-0490-417f-a8fc-3afdfc8a6754"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Stash the original webhook body so it survives all downstream Supabase nodes\nconst body = $json.body;\nreturn [{\n  json: {\n    userId: body.userId,\n    message: body.message\n  }\n}];"
+      },
+      "id": "c8d56076-f4fe-4f41-8dac-4a38a5c677f3",
+      "name": "Extract Input",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        -2576,
+        1664
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "user_health",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "user_id",
+              "keyValue": "={{ $json.userId }}"
+            }
+          ]
+        }
+      },
+      "id": "3077a119-1175-49e7-83f2-78e95e1043d7",
+      "name": "Fetch Health Data",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -2352,
+        1744
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "7d60tmUi0JLbUTPL",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.message }}",
+        "options": {
+          "systemMessage": "=You are a helpful assistant that help the users clarify their doubts with health.\nTheir data is as follows:\n{{ $json.input }}\n{{ $json.signals }}\n{{ $json.risks }}\n{{ $json.biological_age }}\n{{ $json.top_risks }}\n{{ $json.summary }}\n{{ $json.future_risk }}\nand the following suggestions were given\n{{ $json.actions }}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -1680,
+        1664
+      ],
+      "id": "e857cd1e-62ce-4281-9def-9ca1d3685faa",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -1328,
+        1664
+      ],
+      "id": "9cdc13cf-5ed0-47ba-8fd3-3d44674f17cb",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -2128,
+        1664
+      ],
+      "id": "4fb12be0-43ae-4bea-a669-10da0c735cde",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Code in JavaScript').item.json.user_id }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        -1552,
+        1888
+      ],
+      "id": "2feccaf4-2b78-4daa-9335-2e6c5c2ffa58",
+      "name": "Simple Memory"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Input is your 2‑item array\nconst items = $input.all();\n\n// Extract the two objects\nconst msg = items[0].json;      // { userId, message }\nconst data = items[1].json;     // big health object\n\n// Build a single combined object\nconst combined = {\n  ...data,\n  // keep existing user_id, also add plain userId if you want\n  userId: msg.userId,\n  message: msg.message,\n};\n\n// Return as array of items for n8n\nreturn [\n  {\n    json: combined,\n  },\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1904,
+        1664
+      ],
+      "id": "f9f4c9f0-8a85-4ed9-ab5c-c365947c56e3",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "model": "groq/compound-mini",
+        "options": {
+          "maxTokensToSample": 1024
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        -1680,
+        1888
+      ],
+      "id": "99650268-cb2c-4e71-a69d-94f4c2b936be",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "5KzDx6ZOfXsA8tqD",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## 🏥 Health AI Chatbot Workflow\n\n**Purpose:** Personalized health assistant that answers user questions based on their health data stored in Supabase.\n\n**Flow:**\n1. **Webhook** receives POST requests at `/chat` with userId and message\n2. **Extract Input** preserves the original request data\n3. **Parallel Processing:**\n   - Passes user input forward\n   - **Fetch Health Data** retrieves user's health profile from Supabase (signals, risks, biological age, actions, etc.)\n4. **Merge** combines both data streams\n5. **Code in JavaScript** merges user message with health data into single context object\n6. **AI Agent** (powered by Groq compound-mini model)\n   - Uses health data in system prompt for personalized responses\n   - Maintains conversation history via **Simple Memory** (5-message window per user)\n   - Answers health questions with context awareness\n7. **Respond to Webhook** returns AI response to caller\n\n**Key Features:**\n✓ User-specific health context\n✓ Conversation memory per user\n✓ Real-time health guidance\n✓ Webhook-based API interface",
+        "height": 560,
+        "width": 480,
+        "color": 4
+      },
+      "id": "0653ed92-d17f-4511-884f-7ed42079a3b7",
+      "name": "Workflow Description",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1168,
+        1488
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * Advanced Health Analytics Node\n * Logic: Overall Risk, Clinical Flagging, & Biological Age\n */\n\nfor (const item of $input.all()) {\n    const d = item.json;\n\n    // --- 1. CORE DOMAIN CALCULATIONS (Previously Defined) ---\n    const hWeights = { intercept: -5.5, age: 0.02, sex: 0.8, cp: 0.75, trestbps: 0.015, chol: 0.005, fbs: 0.2, restecg: 0.3, thalach: -0.02, exang: 0.9, oldpeak: 0.5, slope: 0.4, ca: 1.1, thal: 0.8, bmi: 0.1 };\n    let hZ = hWeights.intercept + (d.age * hWeights.age) + (d.sex * hWeights.sex) + (d.cp * hWeights.cp) + (d.trestbps * hWeights.trestbps) + (d.chol * hWeights.chol) + (d.fbs * hWeights.fbs) + (d.restecg * hWeights.restecg) + (d.thalach * hWeights.thalach) + (d.exang * hWeights.exang) + (d.oldpeak * hWeights.oldpeak) + (d.slope * hWeights.slope) + (d.ca * hWeights.ca) + (d.thal * hWeights.thal) + (d.bmi * hWeights.bmi);\n    const heartP = 1 / (1 + Math.exp(-hZ));\n\n    const lWeights = { intercept: -4.536, age: 0.077, bmi: -0.025, copd: 0.36, fam: 0.58, smoke: 0.26, dur: 0.032, quit: -0.031 };\n    let lZ = lWeights.intercept + (d.age * lWeights.age) + (d.bmi * lWeights.bmi) + (d.copd * lWeights.copd) + (d.family_hx * lWeights.fam) + (d.is_smoker * lWeights.smoke) + (d.duration * lWeights.dur) + (d.years_quit * lWeights.quit);\n    const lungP = 1 / (1 + Math.exp(-lZ));\n\n    const fib4 = (d.age * d.ast) / (d.platelets * Math.sqrt(d.alt));\n    const mets_ir = (Math.log((2 * d.glucose) + d.triglycerides) * d.bmi) / Math.log(d.hdl);\n\n    // --- 2. CALCULATE OVERALL HEALTH RISK (Weighted Ensemble) ---\n    // We weigh Heart and Metabolism higher as they are systemic drivers.\n    const overallRisk = (heartP * 0.35) + (lungP * 0.20) + (Math.min(fib4 / 4, 1) * 0.15) + (Math.min(mets_ir / 50, 1) * 0.30);\n    \n    // --- 3. CALCULATE BIOLOGICAL AGE (KDM-Lite) ---\n    // Every high-risk marker adds \"years\" to your birth age.\n    let bioAgeDelta = 0;\n    if (heartP > 0.5) bioAgeDelta += 5;\n    if (mets_ir > 31.8) bioAgeDelta += 4;\n    if (fib4 > 1.45) bioAgeDelta += 2;\n    if (d.bmi > 30) bioAgeDelta += 3;\n    const biologicalAge = d.age + bioAgeDelta;\n\n    // --- 4. FLAG HEALTH RISKS (Clinical Alerts) ---\n    let flags = [];\n    if (heartP > 0.7) flags.push(\"CRITICAL_HEART_RISK\");\n    if (fib4 > 3.25) flags.push(\"ADVANCED_LIVER_FIBROSIS_INDICATED\");\n    if (mets_ir > 45) flags.push(\"SEVERE_INSULIN_RESISTANCE\");\n    if (lungP > 0.05) flags.push(\"HIGH_LUNG_SCREENING_PRIORITY\");\n\n    // --- OUTPUT ASSIGNMENT ---\n    item.json.analytics = {\n        overall_health_risk: (overallRisk * 100).toFixed(2) + \"%\",\n        biological_age: biologicalAge.toFixed(1),\n        age_differential: (biologicalAge - d.age).toFixed(1) + \" years\",\n        clinical_flags: flags.length > 0 ? flags : [\"NO_URGENT_FLAGS\"],\n        risk_profile: overallRisk > 0.6 ? \"HIGH\" : (overallRisk > 0.3 ? \"MODERATE\" : \"LOW\")\n    };\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2096,
+        720
+      ],
+      "id": "83a6050c-c518-457d-93e3-0022eadc2a00",
+      "name": "Code in JavaScript7"
+    },
+    {
+      "parameters": {
+        "content": "## 🏥 Advanced Health Analytics Workflow\n\n**Purpose:** Analyzes comprehensive health data and generates AI-powered summaries of health risk profiles.\n\n**Flow:**\n1. **Webhook** - Receives health data (cardiovascular, metabolic, liver, lung, sleep, mental health metrics)\n2. **Code Node** - Performs advanced analytics:\n   - Heart disease risk prediction\n   - Lung cancer screening priority\n   - Liver fibrosis assessment (FIB-4)\n   - Metabolic health score (METS-IR)\n   - Overall health risk calculation\n   - Biological age estimation\n   - Clinical flag detection\n3. **AI Agent** - Summarizes analytics in natural language\n4. **Respond to Webhook** - Returns the summary\n\n**Key Outputs:**\n- Overall health risk percentage\n- Biological age vs chronological age\n- Clinical flags (critical alerts)\n- Risk profile classification (LOW/MODERATE/HIGH)",
+        "height": 460,
+        "width": 520,
+        "color": 4
+      },
+      "id": "7b3bec9d-4432-4a69-be87-647cecc08837",
+      "name": "Workflow Description1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1328,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "path": "6d329166-6ec6-445e-a59c-4291def9f8ca",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -2320,
+        720
+      ],
+      "id": "02e9fe2b-290e-408f-923c-1bb81d63d960",
+      "name": "Webhook1",
+      "webhookId": "6d329166-6ec6-445e-a59c-4291def9f8ca"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.analytics }}",
+        "options": {
+          "systemMessage": "You are a helpful summarizing agent . You take in the input JSON and summarize the analytics ."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -1872,
+        720
+      ],
+      "id": "5bf4b9ad-b08d-4dfb-a33b-c4b44e2d50e2",
+      "name": "AI Agent1"
+    },
+    {
+      "parameters": {
+        "model": "groq/compound-mini",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        -1792,
+        944
+      ],
+      "id": "ad8dd5b9-d766-446f-a7f0-a90677373ec2",
+      "name": "Groq Chat Model1",
+      "credentials": {
+        "groqApi": {
+          "id": "5KzDx6ZOfXsA8tqD",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -1520,
+        720
+      ],
+      "id": "7a1f0bc3-577a-4be2-94ab-ec07cbc93254",
+      "name": "Respond to Webhook1"
+    },
+    {
+      "parameters": {
+        "functionCode": "const input = $json.body;\n\n// BMI\nconst height_m = input.height / 100;\nconst bmi = input.weight / (height_m * height_m);\n\n// SIGNALS\nlet signals = [];\n\nif (input.sleep < 6) signals.push(\"poor_sleep\");\nelse if (input.sleep < 7) signals.push(\"moderate_sleep\");\nelse signals.push(\"good_sleep\");\n\nif (input.steps < 4000) signals.push(\"sedentary\");\nelse if (input.steps < 8000) signals.push(\"low_activity\");\nelse signals.push(\"active\");\n\nif (bmi > 25) signals.push(\"overweight\");\nif (input.waist > 90) signals.push(\"high_waist_risk\");\n\nif (input.diet_quality === \"unhealthy\") signals.push(\"unhealthy_diet\");\nif (input.diet_pattern === \"processed\") signals.push(\"processed_food\");\n\nif (input.smoking_type === \"smoker\") signals.push(\"smoking_risk\");\nif (input.smoking_type === \"ex_smoker\") signals.push(\"past_smoking_risk\");\n\nif (input.alcohol === \"heavy\") signals.push(\"high_alcohol\");\nif (input.alcohol === \"moderate\") signals.push(\"moderate_alcohol\");\n\nif (input.job === \"desk_job\") signals.push(\"sedentary_job\");\nif (input.job === \"construction\") signals.push(\"lung_exposure\");\n\nif (input.stress === \"high\") signals.push(\"chronic_stress\");\nif (input.screen_time > 6) signals.push(\"high_screen_time\");\n\nif (input.family_history.includes(\"diabetes\")) signals.push(\"genetic_risk_diabetes\");\nif (input.family_history.includes(\"heart_disease\")) signals.push(\"genetic_risk_heart\");\n\nif (input.medical_history.length > 0) signals.push(\"existing_condition\");\n\n// RISKS\nlet heartRisk = 0, metabolicRisk = 0, lungRisk = 0, mentalRisk = 0, liverRisk = 0, sleepRisk = 0;\n\nif (signals.includes(\"sedentary\")) heartRisk += 12;\nif (signals.includes(\"overweight\")) heartRisk += 12;\nif (signals.includes(\"smoking_risk\")) heartRisk += 25;\nif (signals.includes(\"chronic_stress\")) heartRisk += 10;\n\nif (signals.includes(\"high_waist_risk\")) metabolicRisk += 25;\nif (signals.includes(\"unhealthy_diet\")) metabolicRisk += 20;\n\nif (signals.includes(\"smoking_risk\")) lungRisk += 35;\n\nif (signals.includes(\"poor_sleep\")) mentalRisk += 25;\nif (signals.includes(\"chronic_stress\")) mentalRisk += 30;\n\nif (signals.includes(\"high_alcohol\")) liverRisk += 35;\n\nif (signals.includes(\"poor_sleep\")) sleepRisk += 40;\n\nconst normalize = x => Math.min(x, 100);\n\nheartRisk = normalize(heartRisk);\nmetabolicRisk = normalize(metabolicRisk);\nlungRisk = normalize(lungRisk);\nmentalRisk = normalize(mentalRisk);\nliverRisk = normalize(liverRisk);\nsleepRisk = normalize(sleepRisk);\n\nconst overallRisk =\n  heartRisk * 0.2 +\n  metabolicRisk * 0.2 +\n  mentalRisk * 0.15 +\n  lungRisk * 0.15 +\n  liverRisk * 0.1 +\n  sleepRisk * 0.1;\n\n// BIO AGE\nconst healthIndex = overallRisk;\nconst ageShift = (healthIndex - 30) / 10;\n\nlet bioAge = input.age + ageShift;\n\nif (input.waist > 90) bioAge += 2;\nif (signals.includes(\"active\")) bioAge -= 1;\n\nbioAge = Math.max(input.age - 5, bioAge);\nbioAge = Math.min(input.age + 15, bioAge);\nbioAge = Math.round(bioAge);\n\nreturn [{\n  json: {\n    input,\n    signals,\n    risks: {\n      heart: heartRisk,\n      metabolic: metabolicRisk,\n      lung: lungRisk,\n      mental: mentalRisk,\n      liver: liverRisk,\n      sleep: sleepRisk,\n      overall: Math.round(overallRisk)\n    },\n    biologicalAge: {\n      realAge: input.age,\n      biologicalAge: bioAge,\n      ageDifference: bioAge - input.age\n    }\n  }\n}];"
+      },
+      "id": "3d0a139b-f09b-4919-ab35-9f740461690f",
+      "name": "Core Engine",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        304,
+        1680
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const risks = $json.risks;\n\nconst topRisks = Object.entries(risks)\n  .filter(([key]) => key !== 'overall')\n  .sort((a, b) => b[1] - a[1])\n  .slice(0, 3);\n\nreturn [{\n  json: {\n    ...$json,\n    topRisks\n  }\n}];"
+      },
+      "id": "593d9f1f-edd1-4a05-b32e-09d9146ac23c",
+      "name": "Context Builder",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        528,
+        1680
+      ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4.1-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4.1-MINI"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are a health intelligence assistant. Be concise, clear, and personalized. Always return in the following JSON format { summary:text  , future_risk:text , actions:array[text] ,keyvalues:array[text]} ",
+              "role": "system"
+            },
+            {
+              "content": "=User context:\n{{ $json }}\n- Top Risks: {{ JSON.stringify($json.topRisks) }}\n- Signals: {{ JSON.stringify($json.signals) }}\n- Job: {{ $json.input.job }}\n- Biological Age Difference: {{ $json.biologicalAge.ageDifference }} years\n- Real Age: {{ $json.biologicalAge.realAge }}\n- Biological Age: {{ $json.biologicalAge.biologicalAge }}\n\nProvide a short, personalized health intelligence report with:\n1. What is happening — a 2–3 sentence summary of the user's current health state. ((both positive and negative)\n2. What will happen in future — 2–3 sentences on health trajectory if habits remain unchanged.\n3. Top 3 actions for the week — specific, actionable steps the user should take now mention action and its specific value.\n4. Only an array of 3 single keyvalues from the input json that corresponds to the actions array. The keywords must be one of the attribute of the input JSON {{ $json.input }}. Example[\"sleep\",\"smoking_type\",\"stress\"]\nKeep the total response under 200 words. Be direct and human."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "63984472-67d6-4e15-9414-f46add25258a",
+      "name": "AI Health Insight",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1,
+      "position": [
+        752,
+        1760
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "zrFPKn18oYCkZRyq",
+          "name": "n8n free OpenAI API credits"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const core = items[0].json;\nconst ai = items[1].json;\n\nreturn [{\n  input: core.input,\n  signals: core.signals,\n  risks: core.risks,\n  biologicalAge: core.biologicalAge,\n  topRisks: core.topRisks,\n\n  summary: ai.summary,\n  future_risk: ai.future_risk,\n  actions: ai.actions,\n  keyvalues: ai.keyvalues\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1552,
+        1776
+      ],
+      "id": "0f2b649c-f120-485a-a2d3-fe947ed9aa14",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "tableId": "user_health",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "user_id",
+              "fieldValue": "={{ $json.input.userId }}"
+            },
+            {
+              "fieldId": "input",
+              "fieldValue": "={{ $json.input }}"
+            },
+            {
+              "fieldId": "signals",
+              "fieldValue": "={{ $json.signals }}"
+            },
+            {
+              "fieldId": "risks",
+              "fieldValue": "={{ $json.risks }}"
+            },
+            {
+              "fieldId": "biological_age",
+              "fieldValue": "={{ $json.biologicalAge }}"
+            },
+            {
+              "fieldId": "top_risks",
+              "fieldValue": "={{ $json.topRisks }}"
+            },
+            {
+              "fieldId": "summary",
+              "fieldValue": "={{ $json.summary }}"
+            },
+            {
+              "fieldId": "future_risk",
+              "fieldValue": "={{ $json.future_risk }}"
+            },
+            {
+              "fieldId": "actions",
+              "fieldValue": "={{ $json.actions }}"
+            },
+            {
+              "fieldId": "keyvalues",
+              "fieldValue": "={{ $json.keyvalues }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1776,
+        1776
+      ],
+      "id": "cbb114bf-b14e-437a-b4f3-41e02a20b449",
+      "name": "Create a row",
+      "credentials": {
+        "supabaseApi": {
+          "id": "7d60tmUi0JLbUTPL",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "# Health Intelligence Workflow\n\n**Purpose:** Analyzes user health data to calculate biological age, identify health risks, and provide personalized AI-powered recommendations.\n\n**Flow:**\n1. **Webhook** receives POST request with health metrics (sleep, steps, diet, smoking, etc.)\n2. **Core Engine** calculates BMI, detects health signals, and computes risk scores (heart, metabolic, lung, mental, liver, sleep)\n3. **Context Builder** identifies top 3 health risks\n4. **AI Health Insight** generates personalized report using GPT-4.1-mini\n5. **Code in JavaScript** parses AI response JSON\n6. **Merge** combines core data with AI insights\n7. **Code in JavaScript1** structures final response\n8. **Respond to Webhook** returns results to caller\n9. **Create a row** stores complete health analysis in Supabase\n\n**Key Outputs:**\n- Biological age vs real age\n- Risk scores across 6 health dimensions\n- Personalized summary, future risk prediction, and 3 actionable steps\n- Health signals and top risk factors",
+        "height": 500,
+        "width": 400,
+        "color": 4
+      },
+      "id": "b7b86fa2-0be2-4467-a6c2-1023e23cf9a7",
+      "name": "Workflow Documentation",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1936,
+        1536
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "health-intelligence",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "4b462919-8bb4-47dc-a3d3-2a2126cd1907",
+      "name": "Webhook2",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        80,
+        1680
+      ],
+      "webhookId": "7d7c6a1f-eb4c-4ec3-9d60-7c8f9e2f82f0"
+    },
+    {
+      "parameters": {
+        "jsCode": "let content = $input.first().json.message.content;\n\n// Iteratively parse escaped JSON string until it's an object\nwhile (typeof content === 'string') {\n  content = JSON.parse(content);\n}\n\nconst extractedJson = content;\n\n// Return in n8n format\nreturn [{ json: extractedJson }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1104,
+        1760
+      ],
+      "id": "3c3d9ec8-8812-49e9-b05d-aef85eb026bf",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1552,
+        1584
+      ],
+      "id": "3aee4988-2fd2-4f8e-a6bb-e94e81b69f55",
+      "name": "Respond to Webhook2"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1328,
+        1680
+      ],
+      "id": "3946ea3e-b835-4c13-b942-5579ea9a583b",
+      "name": "Merge1"
+    }
+  ],
+  "pinData": {
+    "Webhook1": [
+      {
+        "json": {
+          "trial_id": "01_Healthy_Athlete",
+          "age": 28,
+          "sex": 1,
+          "bmi": 22.5,
+          "education": 5,
+          "cp": 0,
+          "trestbps": 115,
+          "chol": 170,
+          "fbs": 0,
+          "restecg": 0,
+          "thalach": 185,
+          "exang": 0,
+          "oldpeak": 0,
+          "slope": 2,
+          "ca": 0,
+          "thal": 2,
+          "copd": 0,
+          "family_hx": 0,
+          "is_smoker": 0,
+          "duration": 0,
+          "years_quit": 0,
+          "ast": 18,
+          "alt": 20,
+          "platelets": 300,
+          "glucose": 82,
+          "triglycerides": 90,
+          "hdl": 65,
+          "total_sleep_minutes": 480,
+          "time_in_bed_minutes": 510,
+          "deep_sleep_pct": 22,
+          "rem_sleep_pct": 25,
+          "latency_minutes": 10,
+          "consistency_variance": 0.2,
+          "phq9_score": 1,
+          "late_night_activity": 0.1,
+          "social_interaction_index": 0.9,
+          "negative_sentiment_score": 0.05
+        }
+      }
+    ]
+  },
+  "connections": {
+    "GPT-4 Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Clinical Intelligence Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conversation Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Clinical Intelligence Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clinical Guidelines RAG": {
+      "ai_tool": [
+        [
+          {
+            "node": "Clinical Intelligence Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Medical Research Search": {
+      "ai_tool": [
+        [
+          {
+            "node": "Clinical Intelligence Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Clinical Guidelines RAG",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Health Query Webhook": {
+      "main": [
+        [
+          {
+            "node": "Clinical Intelligence Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clinical Intelligence Agent": {
+      "main": [
+        [
+          {
+            "node": "Send Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Input": {
+      "main": [
+        [
+          {
+            "node": "Fetch Health Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Health Data": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript7": {
+      "main": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Core Engine": {
+      "main": [
+        [
+          {
+            "node": "Context Builder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Context Builder": {
+      "main": [
+        [
+          {
+            "node": "AI Health Insight",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Health Insight": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Create a row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook2": {
+      "main": [
+        [
+          {
+            "node": "Core Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "f4c4e27d-ac8a-4611-8076-51a6372cf867",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "4b3dc6c50b4ecbb216ae154aff02341822cfa9888b30cdb3aa023ca4f83957dd"
+  },
+  "id": "3VqgFLlZj84qgSoA",
+  "tags": []
+}
